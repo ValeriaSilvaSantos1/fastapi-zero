@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from fastapi_zero.app import app
 from fastapi_zero.database import get_session
 from fastapi_zero.models import User, table_registry
+from fastapi_zero.security import get_password_hash
 
 
 @pytest.fixture
@@ -31,38 +32,56 @@ def session():
         connect_args={'check_same_thread': False},
         poolclass=StaticPool,
     )
-
     table_registry.metadata.create_all(engine)
 
     with Session(engine) as session:
         yield session
 
-    table_registry.metadata.create_all(engine)
+    table_registry.metadata.drop_all(engine)
+    engine.dispose()
 
 
 @contextmanager
-def _mock_db_time_impl(*, model, time=datetime(2026, 4, 12)):
-    def fake_time_hook(mapper, connection, target):
+def _mock_db_time(*, model, time=datetime(2024, 1, 1)):
+    def fake_time_handler(mapper, connection, target):
         if hasattr(target, 'created_at'):
             target.created_at = time
+        if hasattr(target, 'updated_at'):
+            target.updated_at = time
 
-    event.listen(model, 'before_insert', fake_time_hook)
+    event.listen(model, 'before_insert', fake_time_handler)
 
     yield time
 
-    event.remove(model, 'before_insert', fake_time_hook)
+    event.remove(model, 'before_insert', fake_time_handler)
 
 
 @pytest.fixture
-def _mock_db_time():
-    return _mock_db_time_impl
+def mock_db_time():
+    return _mock_db_time
 
 
 @pytest.fixture
 def user(session):
-    user = User(username='Teste', email='test@test.com', password='testtest')
+    password = 'testtest'
+    user = User(
+        username='Teste',
+        email='teste@test.com',
+        password=get_password_hash('testtest'),
+    )
     session.add(user)
     session.commit()
     session.refresh(user)
 
+    user.clean_password = password
+
     return user
+
+
+@pytest.fixture
+def token(client, user):
+    response = client.post(
+        '/token',
+        data={'username': user.email, 'password': user.clean_password},
+    )
+    return response.json()['access_token']
