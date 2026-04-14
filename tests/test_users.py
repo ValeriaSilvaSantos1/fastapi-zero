@@ -51,7 +51,6 @@ def test_update_user(client, user, token):
 
 
 def test_update_integrity_error(client, user, token):
-    # Inserindo fausto
     client.post(
         '/users',
         json={
